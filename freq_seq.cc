@@ -12,8 +12,6 @@ using namespace BamTools;
 using namespace std;
 
 
-
-
 class FreqVisitor: public PileupVisitor{
     public:
         FreqVisitor(const RefVector& bam_references,
@@ -29,7 +27,7 @@ class FreqVisitor: public PileupVisitor{
         ~FreqVisitor(void) { }
     public:
         void Visit(const PileupPosition& pileupData){
-            ReadDataVector sample_reads;
+            ReadDataVector sample_reads(nsamp);
             for(auto it = begin(pileupData.PileupAlignments);
                      it !=end(pileupData.PileupAlignments);
                      ++it){
@@ -44,39 +42,47 @@ class FreqVisitor: public PileupVisitor{
                         }
                     }
                 }
-                if (is_poly(sample_reads)){
-                    string chr = m_bam_ref[pileupData.RefId].RefName;
-                    uint64_t pos  = pileupData.Position;
-                    ReadData overall = {0,0,0,0};
-                    //find major allele over all
-                    for (auto summary_it =  begin(sample_reads); 
-                              summary_it != end(sample_reads);
-                              summary_it++){
-                        for(size_t i = 0; i < 4; i++){
-                            overall.reads[i] += summary_it->reads[i];
-                        }
-                    }
-                    uint16_t major_allele = distance(overall.reads, 
-                                             max_element(overall.reads, overall.reads+4));
-    
-                    cout << chr << '\t' <<  pos << '\t' << major_allele << '\t';
-                    //find frequency of non-major alleles in all sites
-                    for (auto summary_it =  begin(sample_reads); 
-                              summary_it != end(sample_reads);
-                              summary_it++){
-                        uint64_t depth = 0;
-                        uint64_t minor_allele_count = 0;
-                        for (size_t i=0; i < 4; i++){
-                            if (i != major_allele){
-                                minor_allele_count += summary_it->reads[i];
-                            }
-                            depth += summary_it->reads[i];
-                        }
-                        cout << minor_allele_count / (double)depth << '\t';
-                    }
-                    cout << endl;
+            //find major allele over all
+            ReadData overall = {0,0,0,0};
+            for (auto summary_it =  begin(sample_reads); 
+                      summary_it != end(sample_reads);
+                      summary_it++){
+                for(size_t i = 0; i < 4; i++){
+                    overall.reads[i] += summary_it->reads[i];
                 }
             }
+            uint16_t major_allele = distance(overall.reads, 
+                                     max_element(overall.reads, overall.reads+4));
+    
+            //Go back over, recording the minor allele freq
+            // TODO - can we record this info in first pass
+            bool is_poly = false;
+            string output;
+            for (auto final_it =  begin(sample_reads); 
+                      final_it != end(sample_reads);
+                      final_it++){
+                uint32_t minor_allele_count = 0;
+                uint32_t depth = 0;
+                for(size_t i = 0; i < 4; i++){
+                    if (i != major_allele){
+                        minor_allele_count += final_it->reads[i];
+                    }
+                    depth += final_it->reads[i];
+                }
+                double MAF = minor_allele_count/(double)depth;
+                output += '\t' + to_string(MAF);
+                if (MAF > 0.05){
+                    is_poly = true;
+                }
+            }
+            if( is_poly ){
+                cout << m_bam_ref[pileupData.RefId].RefName << '\t' 
+                     <<  pileupData.Position //next bit starts with <tab>
+                     <<  output 
+                     <<  endl;
+            }
+        }
+                   
     private:
         RefVector m_bam_ref;
         int nsamp;
@@ -112,5 +118,4 @@ int main(int argc, char* argv[]){
     }
     pileup.Flush();
     return 0;
-}
-      
+}      
