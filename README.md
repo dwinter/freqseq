@@ -4,15 +4,15 @@
 `freq_seq` is a small c++ executable that uses the `bamtools` api to record
 the frequencies of major and minor 'alleles' from reads mapped in a bam file. 
 
-The program was written a speific task (detecting multiple infectoins from NGS
-data), and thus many of the interesting paramters (minor allele frequency cut
+The program was written a specific task (detecting multiple infections from NGS
+data), and thus many of the interesting parameters (minor allele frequency cut
 off, mapping and base quality cuts) are current hard-coded (though this can be
 changed very easily). 
 
 ##Build
 
-The build is managed by cmake. This series of commands shuold get you an
-exectuable called `freq_seq` :
+The build is managed by cmake. This series of commands should get you an
+executable called `freq_seq` :
 
 ```
 mkdir buid
@@ -21,7 +21,7 @@ cmake ../
 make
 ```
 
-##Usae 
+##Usage 
 
 ```
 ./freq_seq [path_to_BAM] [out_prefix]
