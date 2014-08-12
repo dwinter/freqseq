@@ -17,11 +17,19 @@ class FreqVisitor: public PileupVisitor{
         FreqVisitor(const RefVector& bam_references,
                     BamAlignment& ali, 
                     const SamHeader& header,
-                    const SampleNames& samples
+                    const SampleNames& samples,
+                    vector<uint32_t>& count_minors,
+                    vector<uint32_t>& denom_minors,
+                    ostream *out_stream
                     ):
             PileupVisitor(), m_samples(samples), 
                              m_header(header),
-                             m_bam_ref(bam_references) {
+                             m_bam_ref(bam_references),
+                             m_count_minor(count_minors),
+                             m_denom_minor(denom_minors),
+                             m_ostream(out_stream)
+
+            {             
                 nsamp = m_samples.size(); 
             }
         ~FreqVisitor(void) { }
@@ -31,7 +39,7 @@ class FreqVisitor: public PileupVisitor{
             for(auto it = begin(pileupData.PileupAlignments);
                      it !=end(pileupData.PileupAlignments);
                      ++it){
-                if( passes_QC(*it, 13, 13) ){
+                if( passes_QC(*it, 30, 13) ){
                     uint16_t b_index = get_base_index(it->Alignment.QueryBases[it->PositionInAlignment]);
                     if (b_index < 4){
                         string tag_id;
@@ -69,22 +77,34 @@ class FreqVisitor: public PileupVisitor{
                     }
                     depth += final_it->reads[i];
                 }
+                //First: Does this pass have >10 reads and > 0.2 of them minor
                 double MAF = minor_allele_count/(double)depth;
+                if(depth > 10){
+                    int pos = distance(begin(sample_reads), final_it); 
+                    m_denom_minor[pos] += 1;
+                    if(MAF > 0.2){
+                        m_count_minor[pos] += 1;
+                    }
+                }
+                //Second: If MAF > 0.05 set site to polymoprhic
                 output += '\t' + to_string(MAF);
                 if (MAF > 0.05){
                     is_poly = true;
                 }
             }
             if( is_poly ){
-                cout << m_bam_ref[pileupData.RefId].RefName << '\t' 
-                     <<  pileupData.Position //next bit starts with <tab>
-                     <<  output 
-                     <<  endl;
+                *m_ostream << m_bam_ref[pileupData.RefId].RefName << '\t' 
+                          <<  pileupData.Position //next bit starts with <tab>
+                          <<  output 
+                          <<  endl;
             }
         }
                    
     private:
         RefVector m_bam_ref;
+        vector<uint32_t>& m_count_minor;
+        vector<uint32_t>&m_denom_minor;
+        ostream* m_ostream;
         int nsamp;
         SampleNames m_samples;
         SamHeader m_header;
@@ -94,6 +114,10 @@ class FreqVisitor: public PileupVisitor{
         
 int main(int argc, char* argv[]){
     string bam_path = argv[1];
+    string out_prefix = argv[2];
+    ofstream result_stream (out_prefix + "_bases.tsv");
+    
+
     BamReader bam;
     bam.Open(bam_path);
     bam.OpenIndex(bam_path + ".bai");
@@ -105,17 +129,32 @@ int main(int argc, char* argv[]){
                 samples.push_back(it->Sample);
         }
     }
+    uint32_t nsamp = samples.size();
+    vector<uint32_t> minor_denom (nsamp, 0);
+    vector<uint32_t> minor_count (nsamp, 0);
+
     BamAlignment ali;
     PileupEngine pileup;
 
     FreqVisitor *f = new FreqVisitor(references, 
                                     ali, 
                                     header,
-                                    samples);
+                                    samples,
+                                    minor_count,
+                                    minor_denom,
+                                    &result_stream);
     pileup.AddVisitor(f); 
     while(bam.GetNextAlignment(ali)){
         pileup.AddAlignment(ali);
     }
     pileup.Flush();
+    
+    ofstream summary (out_prefix + "_summary.tsv");
+    for (size_t i=0; i < nsamp; i++){
+        summary << samples[i] << '\t'
+                << minor_count[i]/(double)minor_denom[i];
+    }
+
+
     return 0;
 }      
