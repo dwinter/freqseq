@@ -45,20 +45,17 @@ class RafVisitor: public PileupVisitor{
                     const Fasta& ref_genome,
                     const SamHeader& header,
                     const SampleMap& samples,
-                    vector<uint32_t>& nref,
-                    vector<uint32_t>& depth,
                     ostream *out_stream
                     ):
             PileupVisitor(), m_samples(samples), 
                              m_ref_genome(ref_genome),
                              m_header(header),
                              m_bam_ref(bam_references),
-                             m_ostream(out_stream),
-                             m_nref(nref),
-                             m_depth(depth)
+                             m_ostream(out_stream)
 
 
             {             
+
                 nsamp = m_samples.size(); 
             }
         ~RafVisitor(void) { }
@@ -67,26 +64,29 @@ class RafVisitor: public PileupVisitor{
             uint64_t pos  = pileupData.Position;                                                   
             m_ref_genome.GetBase(pileupData.RefId, pos, current_base);
             uint16_t ref_base_idx = base_index(current_base);
+            vector<uint32_t> nref (nsamp, 0);
+            vector<uint32_t> depth (nsamp, 0);
             for(auto it = begin(pileupData.PileupAlignments);
                      it !=end(pileupData.PileupAlignments);
                      ++it){
                 if( passes_QC(*it, 30, 13) ){
+                    
                     uint16_t b_index = get_base_index(it->Alignment.QueryBases[it->PositionInAlignment]);
                     if (b_index < 4){
                         string tag_id;
                         it->Alignment.GetTag("RG", tag_id);
                         uint32_t sindex = m_samples[tag_id];
-                        m_depth[sindex] += 1;
+                        depth[sindex] += 1;
                         if(b_index == ref_base_idx){
-                            m_nref[sindex] += 1;
+                            nref[sindex] += 1;
                         }
                     }
                 }
             }
             for (size_t i = 0; i< nsamp; i++){
-                if(m_depth[i] > 0){
+                if(depth[i] > 0){
                     *m_ostream << m_bam_ref[pileupData.RefId].RefName << '\t' 
-                               << pos << '\t' << i << '\t' << m_nref[i] << m_depth[i] 
+                               << pos << '\t' << i << '\t' << nref[i]  <<'\t' << depth[i] 
                                << endl;
                 }
 
@@ -95,8 +95,6 @@ class RafVisitor: public PileupVisitor{
     private:
         RefVector m_bam_ref;
         Fasta m_ref_genome;
-        vector<uint32_t> m_nref;
-        vector<uint32_t>m_depth;
         ostream* m_ostream;
         int nsamp;
         SampleMap m_samples;
@@ -133,6 +131,7 @@ int main(int argc, char* argv[]){
     uint16_t sindex = 0;
     for(auto it = header.ReadGroups.Begin(); it!= header.ReadGroups.End(); it++){
         if(it->HasSample()){
+            cerr << it->Sample <<endl;
             auto s  = name_map.find(it->Sample);
             if( s == name_map.end()){ // not in there yet
                 name_map[it->Sample] = sindex;
@@ -149,8 +148,6 @@ int main(int argc, char* argv[]){
     }
 
     uint32_t nsamp = samples.size();
-    vector<uint32_t> nref (nsamp, 0);
-    vector<uint32_t> depth (nsamp, 0);
 
     BamAlignment ali;
     PileupEngine pileup;
@@ -159,8 +156,6 @@ int main(int argc, char* argv[]){
                                     ali, reference_genome,
                                     header,
                                     samples,
-                                    nref,
-                                    depth,
                                     &result_stream);
     pileup.AddVisitor(f); 
     while(bam.GetNextAlignment(ali)){
